@@ -9,7 +9,7 @@ const SCOPES = [
 
 // ---------- Настройки ----------
 const PLAYLIST_NAME = 'MyShuffle';  // единственный плейлист, который создаёт сайт
-const CHUNK = 200;                  // сколько треков кладётся в плейлист за одно нажатие (~11 часов музыки)
+const CHUNK = 9900;                 // сколько песен кладётся в плейлист (лимит Spotify — 10 000)
 const MIN_LIKES = 3;                // исполнитель считается любимым, если в «Понравившихся» от него столько треков
 const UPDATE_EVERY_HOURS = 12;      // как часто проверять новинки исполнителей
 const PAUSE_MS = 120;               // пауза между запросами, чтобы Spotify не ограничивал
@@ -669,7 +669,7 @@ async function nextChunk(pool, unplayed) {
   if (fresh.length) deck = shuffle(deck.concat(fresh));
   deck = back.concat(deck);
 
-  if (deck.length < CHUNK) {
+  if (!deck.length) {
     const left = new Set(deck);
     deck = deck.concat(shuffle([...pool.keys()].filter(id => !left.has(id))));
     played.clear();
