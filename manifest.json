@@ -1,0 +1,8 @@
+{
+  "name": "MyShuffle",
+  "short_name": "MyShuffle",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#1DB954"
+}
