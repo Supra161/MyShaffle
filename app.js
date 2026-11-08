@@ -14,10 +14,12 @@ const MIN_LIKES = 3;                // исполнитель считается
 const UPDATE_EVERY_HOURS = 12;      // как часто проверять новинки исполнителей
 const PAUSE_MS = 120;               // пауза между запросами, чтобы Spotify не ограничивал
 const PARALLEL = 3;                 // сколько релизов скачивается одновременно
+const MAX_CHAIN = 40;               // самая длинная цепочка песен с переходами
 
 const $ = id => document.getElementById(id);
 const setStatus = t => { $('status').textContent = t; };
 const setSync = t => { $('sync').textContent = t; };
+const setLinkStatus = t => { $('link-status').textContent = t; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const nextPath = url => url ? url.replace('https://api.spotify.com/v1', '') : null;
 const trackUri = id => 'spotify:track:' + id;
@@ -195,7 +197,18 @@ function hash(s) {
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(36);
 }
-const songKey = (aid, name) => hash(aid + '|' + normName(name));
+// «Intro», «Interlude» и т. п. есть на многих альбомах: для них ключ учитывает альбом
+const GENERIC = /^(intro|outro|interlude|skit|prelude|reprise|untitled)$/;
+function songKey(aid, name, albumId) {
+  const n = normName(name);
+  return hash(aid + '|' + (albumId && GENERIC.test(n) ? albumId + '|' : '') + n);
+}
+// Ключ трека: по собираемому исполнителю, если он указан в треке, иначе по первому исполнителю
+function trackKey(t, aid, albumId) {
+  const credited = aid && (t.artists || []).some(a => a.id === aid);
+  const first = (t.artists && t.artists[0]) || {};
+  return songKey(credited ? aid : (first.id || ''), t.name, albumId);
+}
 const isPlayable = t => t && t.id && !t.is_local && t.is_playable !== false;
 
 // ---------- «Понравившиеся» ----------
@@ -204,7 +217,7 @@ const isPlayable = t => t && t.id && !t.is_local && t.is_playable !== false;
 function likedRow(tr) {
   if (!isPlayable(tr) || tr.type !== 'track') return null;
   const a = (tr.artists && tr.artists[0]) || {};
-  return [tr.id, a.id || '', songKey(a.id || '', tr.name), a.name || ''];
+  return [tr.id, a.id || '', trackKey(tr, null, tr.album && tr.album.id), a.name || ''];
 }
 
 async function loadLikedFull() {
@@ -242,6 +255,168 @@ async function refreshLikedQuick() {
   const list = fresh.concat(cached);
   await DB.set('liked', list);
   return list;
+}
+
+// ---------- Переходы: песни, которые должны идти подряд ----------
+
+// Связи хранятся по ключу песни: ключ A -> [ключ B, id A, id B, 'auto' | 'user']
+let linksP = null;
+function getLinks() {
+  if (!linksP) {
+    linksP = (async () => ({
+      links: await DB.get('links', {}),
+      blocked: new Set(await DB.get('links_blocked', [])) // связи, которые вы разорвали вручную
+    }))();
+  }
+  return linksP;
+}
+async function saveLinks() {
+  const { links, blocked } = await getLinks();
+  await DB.set('links', links);
+  await DB.set('links_blocked', [...blocked]);
+}
+
+const ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6 };
+function partInfo(name) {
+  const m = normName(name).match(/^(.*?)[\s,:(\[\-–—]*\b(?:pt\.?|part)\s*(\d+|vi|iv|v|i{1,3})\b/);
+  if (!m) return null;
+  return { stem: m[1].trim(), n: /^\d+$/.test(m[2]) ? Number(m[2]) : ROMAN[m[2]] };
+}
+// «Pt. 1» → «Pt. 2», а Intro / Interlude / Skit переходят в следующую песню альбома
+function flowsInto(a, b) {
+  const pa = partInfo(a.name), pb = partInfo(b.name);
+  if (pa && pb && pa.stem === pb.stem && pb.n === pa.n + 1) return true;
+  return /\b(intro|interlude|prelude|skit)\b/i.test(a.name);
+}
+const byAlbumOrder = (a, b) => ((a.disc_number || 1) - (b.disc_number || 1)) || (a.track_number - b.track_number);
+
+function autoLinks(albumTracks, aid, albumId, links, blocked) {
+  const t = albumTracks.filter(isPlayable).sort(byAlbumOrder);
+  for (let j = 0; j + 1 < t.length; j++) {
+    const a = t[j], b = t[j + 1];
+    if ((a.disc_number || 1) !== (b.disc_number || 1) || b.track_number !== a.track_number + 1) continue;
+    if (!flowsInto(a, b)) continue;
+    const ka = trackKey(a, aid, albumId);
+    if (links[ka] || blocked.has(ka)) continue;
+    links[ka] = [trackKey(b, aid, albumId), a.id, b.id, 'auto'];
+  }
+}
+
+function linkGraph(pool, links) {
+  const next = new Map(), prev = new Map();
+  for (const ka of Object.keys(links)) {
+    const [kb, ida, idb] = links[ka];
+    const a = pool.keyToId.get(ka) || ida;
+    const b = pool.keyToId.get(kb) || idb;
+    if (!a || !b || a === b || next.has(a) || prev.has(b)) continue;
+    next.set(a, b);
+    prev.set(b, a);
+  }
+  return { next, prev };
+}
+
+// Вся цепочка, в которую входит песня, от первой к последней
+function chainOf(id, g) {
+  let head = id;
+  const seen = new Set([id]);
+  while (g.prev.has(head) && !seen.has(g.prev.get(head)) && seen.size < MAX_CHAIN) {
+    head = g.prev.get(head);
+    seen.add(head);
+  }
+  const chain = [head];
+  const inChain = new Set(chain);
+  while (g.next.has(chain[chain.length - 1]) && chain.length < MAX_CHAIN) {
+    const n = g.next.get(chain[chain.length - 1]);
+    if (inChain.has(n)) break;
+    chain.push(n);
+    inChain.add(n);
+  }
+  return chain;
+}
+
+// ---------- Кнопки переходов для песни, которая сейчас играет ----------
+
+async function nowPlaying() {
+  const st = await api('/me/player?market=from_token');
+  const t = st && st.item;
+  if (!t || t.type !== 'track' || !t.album) throw new Error('сейчас в Spotify ничего не играет');
+  return t;
+}
+
+async function albumTracksOf(albumId) {
+  const out = [];
+  let path = `/albums/${albumId}/tracks?limit=50&market=from_token`;
+  while (path) {
+    const d = await api(path);
+    out.push(...(d.items || []).filter(Boolean));
+    path = nextPath(d.next);
+  }
+  return out.sort(byAlbumOrder);
+}
+
+const LINK_BUTTONS = ['link-next', 'link-prev', 'link-album', 'link-cut'];
+const q = t => `«${t.name}»`;
+
+async function linkAction(kind) {
+  LINK_BUTTONS.forEach(b => { $(b).disabled = true; });
+  try {
+    setLinkStatus('Смотрю, что играет...');
+    const t = await nowPlaying();
+    const albumId = t.album.id;
+    const { links, blocked } = await getLinks();
+    const key = x => trackKey(x, null, albumId);
+
+    if (kind === 'cut') {
+      const k = key(t);
+      let n = 0;
+      for (const ka of Object.keys(links)) {
+        const [kb, ida, idb] = links[ka];
+        if (ka === k || kb === k || ida === t.id || idb === t.id) {
+          delete links[ka];
+          blocked.add(ka);
+          n++;
+        }
+      }
+      await saveLinks();
+      setLinkStatus(n ? `Связи песни ${q(t)} убраны.` : `У песни ${q(t)} не было связей.`);
+      return;
+    }
+
+    const list = await albumTracksOf(albumId);
+    let i = list.findIndex(x => x.id === t.id);
+    if (i < 0) i = list.findIndex(x => (x.disc_number || 1) === (t.disc_number || 1) && x.track_number === t.track_number);
+    if (i < 0) throw new Error('не нашёл песню в её альбоме');
+    const add = (a, b) => {
+      const ka = key(a);
+      links[ka] = [key(b), a.id, b.id, 'user'];
+      blocked.delete(ka);
+    };
+
+    if (kind === 'next') {
+      const b = list[i + 1];
+      if (!b) throw new Error('это последняя песня альбома');
+      add(list[i], b);
+      await saveLinks();
+      // сразу ставим следующую песню в очередь, чтобы переход прозвучал прямо сейчас
+      await api('/me/player/queue?uri=' + encodeURIComponent(trackUri(b.id)), { method: 'POST' }).catch(() => {});
+      setLinkStatus(`Готово: ${q(list[i])} → ${q(b)}. ${q(b)} заиграет следующей.`);
+    } else if (kind === 'prev') {
+      const a = list[i - 1];
+      if (!a) throw new Error('это первая песня альбома');
+      add(a, list[i]);
+      await saveLinks();
+      setLinkStatus(`Готово: ${q(a)} → ${q(list[i])}.`);
+    } else if (kind === 'album') {
+      for (let j = 0; j + 1 < list.length; j++) add(list[j], list[j + 1]);
+      await saveLinks();
+      setLinkStatus(`Альбом «${t.album.name}» теперь звучит целиком и по порядку.`);
+    }
+  } catch (e) {
+    setLinkStatus('Не получилось: ' + e.message);
+  } finally {
+    LINK_BUTTONS.forEach(b => { $(b).disabled = false; });
+    showStats().catch(() => {});
+  }
 }
 
 // ---------- Любимые исполнители и все их песни ----------
@@ -305,34 +480,37 @@ async function runPool(items, n, fn) {
 }
 
 // Все песни одного исполнителя: rows пополняется строками [id трека, ключ песни]
-async function syncArtist(aid, rows, known, full, onRelease) {
+async function syncArtist(aid, rows, known, full, ctx = {}) {
   const keys = new Set(rows.map(r => r[1]));
   let added = 0;
   const releases = await artistReleases(aid, known, full);
   // сначала альбомы, потом синглы: так сингл, уже вошедший в альбом, можно не скачивать
   for (const group of ['album', 'single']) {
     await runPool(releases[group], PARALLEL, async al => {
-      if (al.total_tracks === 1 && keys.has(songKey(aid, al.name))) {
+      if (al.total_tracks === 1 && keys.has(songKey(aid, al.name, al.id))) {
         known.add(al.id);
         return;
       }
+      const tracks = [];
       let path = `/albums/${al.id}/tracks?limit=50&market=from_token`;
       while (path) {
         const d = await api(path);
-        for (const t of d.items || []) {
-          if (!isPlayable(t)) continue;
-          if (!(t.artists || []).some(a => a.id === aid)) continue;
-          const k = songKey(aid, t.name);
-          if (keys.has(k)) continue;
-          keys.add(k);
-          rows.push([t.id, k]);
-          added++;
-        }
+        tracks.push(...(d.items || []).filter(Boolean));
         path = nextPath(d.next);
         await sleep(PAUSE_MS);
       }
+      for (const t of tracks) {
+        if (!isPlayable(t)) continue;
+        if (!(t.artists || []).some(a => a.id === aid)) continue;
+        const k = trackKey(t, aid, al.id);
+        if (keys.has(k)) continue;
+        keys.add(k);
+        rows.push([t.id, k]);
+        added++;
+      }
+      if (ctx.links) autoLinks(tracks, aid, al.id, ctx.links, ctx.blocked);
       known.add(al.id);
-      if (onRelease) await onRelease();
+      if (ctx.onRelease) await ctx.onRelease();
     });
   }
   return added;
@@ -353,11 +531,13 @@ async function updateCatalog() {
     const cat = await DB.get('cat', {});                 // id исполнителя -> [[id трека, ключ], ...]
     const known = new Set(await DB.get('cat_albums', [])); // уже разобранные релизы
     const done = new Set(await DB.get('cat_done', []));    // исполнители, собранные полностью
+    const { links, blocked } = await getLinks();
     let added = 0, dirty = 0;
     const persist = async () => {
       await DB.set('cat', cat);
       await DB.set('cat_albums', [...known]);
       await DB.set('cat_done', [...done]);
+      await saveLinks();
     };
     try {
       for (let i = 0; i < artists.length; i++) {
@@ -365,8 +545,9 @@ async function updateCatalog() {
         const full = !done.has(aid);
         setSync(`${full ? 'Собираю песни' : 'Ищу новинки'}: ${aname} (${i + 1}/${artists.length}). Новых треков: ${added}`);
         const rows = cat[aid] || (cat[aid] = []);
-        added += await syncArtist(aid, rows, known, full, async () => {
-          if (++dirty >= 10) { dirty = 0; await persist(); }
+        added += await syncArtist(aid, rows, known, full, {
+          links, blocked,
+          onRelease: async () => { if (++dirty >= 10) { dirty = 0; await persist(); } }
         });
         done.add(aid);
       }
@@ -382,6 +563,18 @@ async function updateCatalog() {
     syncing = false;
     $('sync-btn').disabled = false;
     if (wakeLock) wakeLock.release().catch(() => {});
+    showStats().catch(() => {});
+  }
+}
+
+// Один раз пересобрать альбомы, чтобы найти в них переходы (база песен сохраняется)
+async function migrate() {
+  const v = await DB.get('schema', 1);
+  if (v < 2) {
+    await DB.set('cat_albums', []);
+    await DB.set('cat_done', []);
+    localStorage.removeItem('cat_updated');
+    await DB.set('schema', 2);
   }
 }
 
@@ -395,7 +588,7 @@ function shuffle(a) {
   return a;
 }
 
-// Не ставим подряд два трека одного исполнителя
+// Не ставим подряд два трека (или две связки) одного исполнителя
 function spreadArtists(list, artistOf) {
   const a = [...list];
   for (let i = 1; i < a.length; i++) {
@@ -412,11 +605,11 @@ function spreadArtists(list, artistOf) {
 // Общий набор: «Понравившиеся» + все песни ваших исполнителей, без дублей
 async function buildPool() {
   const pool = new Map(); // id трека -> id исполнителя
-  const keys = new Set();
+  const keyToId = new Map();
   for (const [id, aid, k] of await DB.get('liked', [])) {
     if (pool.has(id)) continue;
     pool.set(id, aid);
-    keys.add(k);
+    if (!keyToId.has(k)) keyToId.set(k, id);
   }
   const cat = await DB.get('cat', {});
   const current = await DB.get('cat_artists', null);
@@ -424,11 +617,12 @@ async function buildPool() {
   for (const aid of Object.keys(cat)) {
     if (allowed && !allowed.has(aid)) continue;
     for (const [id, k] of cat[aid]) {
-      if (pool.has(id) || keys.has(k)) continue;
+      if (pool.has(id) || keyToId.has(k)) continue;
       pool.set(id, aid);
-      keys.add(k);
+      keyToId.set(k, id);
     }
   }
+  pool.keyToId = keyToId;
   return pool;
 }
 
@@ -460,7 +654,11 @@ async function unplayedFromLastChunk(plUri) {
 
 // «Колода»: каждый трек звучит один раз, пока не прозвучит весь набор.
 // Новые треки подмешиваются в ещё не сыгранную часть.
+// Песни с переходами идут связкой, целиком и по порядку.
 async function nextChunk(pool, unplayed) {
+  const { links } = await getLinks();
+  const g = linkGraph(pool, links);
+  const lastSet = new Set(await DB.get('last_chunk', []));
   let deck = (await DB.get('deck', [])).filter(id => pool.has(id));
   const played = new Set(await DB.get('played', []));
   const inDeck = new Set(deck);
@@ -476,9 +674,31 @@ async function nextChunk(pool, unplayed) {
     deck = deck.concat(shuffle([...pool.keys()].filter(id => !left.has(id))));
     played.clear();
   }
-  const chunk = spreadArtists(deck.slice(0, CHUNK), id => pool.get(id));
+
+  const units = [];
+  const taken = new Set();
+  let count = 0, used = 0;
+  while (used < deck.length && count < CHUNK) {
+    const id = deck[used++];
+    if (taken.has(id)) continue;
+    let unit = [id];
+    if (g.next.has(id) || g.prev.has(id)) {
+      const chain = chainOf(id, g);
+      // остановились посреди связки в прошлый раз: уже прослушанное начало не повторяем
+      let s = 0;
+      while (s < chain.length - 1 && chain[s] !== id && played.has(chain[s]) && lastSet.has(chain[s])) s++;
+      unit = chain.slice(s);
+    }
+    unit.forEach(x => taken.add(x));
+    units.push(unit);
+    count += unit.length;
+  }
+  const rest = deck.slice(used).filter(id => !taken.has(id));
+  const artistOf = u => pool.get(u[0]) || pool.get(u[u.length - 1]);
+  const chunk = spreadArtists(units, artistOf).flat();
+
   chunk.forEach(id => played.add(id));
-  await DB.set('deck', deck.slice(CHUNK));
+  await DB.set('deck', rest);
   await DB.set('played', [...played]);
   await DB.set('last_chunk', chunk);
   return chunk;
@@ -560,13 +780,13 @@ async function pickDevice() {
 async function startPlayback(uri) {
   const dev = await pickDevice().catch(() => null);
   if (!dev) return false;
-  const q = 'device_id=' + encodeURIComponent(dev.id);
+  const qs = 'device_id=' + encodeURIComponent(dev.id);
   const off = () => Promise.all([
-    api('/me/player/shuffle?state=false&' + q, { method: 'PUT' }).catch(() => {}),
-    api('/me/player/repeat?state=off&' + q, { method: 'PUT' }).catch(() => {})
+    api('/me/player/shuffle?state=false&' + qs, { method: 'PUT' }).catch(() => {}),
+    api('/me/player/repeat?state=off&' + qs, { method: 'PUT' }).catch(() => {})
   ]);
   await off();
-  await api('/me/player/play?' + q, {
+  await api('/me/player/play?' + qs, {
     method: 'PUT',
     body: JSON.stringify({ context_uri: uri, offset: { position: 0 } })
   });
@@ -596,13 +816,19 @@ async function playPlaylist(uri) {
 async function showStats(pool) {
   pool = pool || await buildPool();
   const left = (await DB.get('deck', [])).filter(id => pool.has(id)).length;
-  $('stats').textContent = `Всего песен: ${pool.size}. Ещё не звучали в этом круге: ${left}.`;
+  const { links } = await getLinks();
+  const n = Object.keys(links).length;
+  $('stats').textContent = `Всего песен: ${pool.size}. Ещё не звучали в этом круге: ${left}. Переходов: ${n}.`;
 }
 
 async function init() {
   $('login').onclick = login;
   $('go').onclick = makeAndPlay;
   $('sync-btn').onclick = updateCatalog;
+  $('link-next').onclick = () => linkAction('next');
+  $('link-prev').onclick = () => linkAction('prev');
+  $('link-album').onclick = () => linkAction('album');
+  $('link-cut').onclick = () => linkAction('cut');
 
   const code = new URLSearchParams(location.search).get('code');
   if (code) {
@@ -619,6 +845,7 @@ async function init() {
   const ready = logged && hasScopes();
   $('go').disabled = !ready;
   $('sync-btn').disabled = !ready;
+  LINK_BUTTONS.forEach(b => { $(b).disabled = !ready; });
   $('login').style.display = ready ? 'none' : '';
   if (logged && !ready) {
     setStatus('Появились новые функции. Нажмите «Войти в Spotify» ещё раз.');
@@ -626,12 +853,13 @@ async function init() {
   }
   if (!ready) return;
 
+  await migrate();
   setStatus('Готово. Нажмите «Перемешать и играть».');
   showStats().catch(() => {});
   const lastUpdate = Number(localStorage.getItem('cat_updated') || 0);
   if (Date.now() - lastUpdate > UPDATE_EVERY_HOURS * 3600 * 1000) {
-    if (!lastUpdate) {
-      setStatus('Первый сбор песен ваших исполнителей займёт время. Держите сайт открытым, слушать можно уже сейчас.');
+    if (!(await DB.get('cat_done', [])).length) {
+      setStatus('Собираю песни ваших исполнителей и ищу переходы. Держите сайт открытым, слушать можно уже сейчас.');
     }
     updateCatalog();
   }

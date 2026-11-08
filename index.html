@@ -11,9 +11,14 @@
   h1{margin-bottom:24px}
   button{background:#1DB954;border:0;border-radius:24px;padding:16px 32px;font-size:18px;color:#000;font-weight:600;margin:8px;cursor:pointer}
   button.secondary{background:transparent;color:#fff;border:1px solid #535353;font-size:15px;padding:12px 24px;font-weight:500}
+  button.small{background:#282828;color:#fff;font-size:14px;padding:10px 16px;font-weight:500;margin:4px}
   button:disabled{opacity:.5;cursor:default}
   #status{margin-top:20px;text-align:center;color:#b3b3b3;min-height:3em;max-width:360px}
   #sync,#stats{margin-top:8px;text-align:center;color:#888;font-size:13px;max-width:360px}
+  .links{margin-top:28px;padding:16px;border:1px solid #333;border-radius:16px;max-width:360px;text-align:center}
+  .links-title{font-size:15px;font-weight:600;margin-bottom:4px}
+  .links-hint{font-size:13px;color:#888;margin-bottom:10px}
+  #link-status{font-size:13px;color:#b3b3b3;margin-top:10px;min-height:1.5em}
 </style>
 </head>
 <body>
@@ -24,6 +29,15 @@
 <div id="status"></div>
 <div id="stats"></div>
 <div id="sync"></div>
-<script src="app.js?v=3"></script>
+<div class="links">
+  <div class="links-title">Переходы между песнями</div>
+  <div class="links-hint">Для песни, которая сейчас играет в Spotify. Связанные песни всегда идут подряд.</div>
+  <button id="link-next" class="small" disabled>Переходит в следующую</button>
+  <button id="link-prev" class="small" disabled>Начинается с предыдущей</button>
+  <button id="link-album" class="small" disabled>Весь альбом подряд</button>
+  <button id="link-cut" class="small" disabled>Разорвать связь</button>
+  <div id="link-status"></div>
+</div>
+<script src="app.js?v=4"></script>
 </body>
 </html>
