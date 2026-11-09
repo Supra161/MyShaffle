@@ -616,7 +616,7 @@ async function buildPool() {
     pool.set(id, aid);
     if (!keyToId.has(k)) keyToId.set(k, id);
   }
-  const cat = await DB.get('cat', {});
+  const cat = {}; // сбор песен исполнителей отключён: только «Понравившиеся»
   const current = await DB.get('cat_artists', null);
   const allowed = current ? new Set(current) : null;
   for (const aid of Object.keys(cat)) {
@@ -862,7 +862,7 @@ async function init() {
   setStatus('Готово. Нажмите «Перемешать и играть».');
   showStats().catch(() => {});
   const lastUpdate = Number(localStorage.getItem('cat_updated') || 0);
-  if (Date.now() - lastUpdate > UPDATE_EVERY_HOURS * 3600 * 1000) {
+  if (false) { // сбор песен исполнителей отключён
     if (!(await DB.get('cat_done', [])).length) {
       setStatus('Собираю песни ваших исполнителей и ищу переходы. Держите сайт открытым, слушать можно уже сейчас.');
     }
