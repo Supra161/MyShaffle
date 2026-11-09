@@ -12,8 +12,8 @@ const PLAYLIST_NAME = 'MyShuffle';  // единственный плейлист
 const CHUNK = 9900;                 // сколько песен кладётся в плейлист (лимит Spotify — 10 000)
 const MIN_LIKES = 3;                // исполнитель считается любимым, если в «Понравившихся» от него столько треков
 const UPDATE_EVERY_HOURS = 12;      // как часто проверять новинки исполнителей
-const PAUSE_MS = 120;               // пауза между запросами, чтобы Spotify не ограничивал
-const PARALLEL = 3;                 // сколько релизов скачивается одновременно
+const PAUSE_MS = 600;               // пауза между запросами, чтобы Spotify не ограничивал
+const PARALLEL = 1;                 // релизы скачиваются по одному, чтобы не упираться в лимит Spotify
 const MAX_CHAIN = 40;               // самая длинная цепочка песен с переходами
 
 const $ = id => document.getElementById(id);
@@ -169,7 +169,7 @@ async function api(path, opts = {}, attempt = 0) {
     const reason = data && data.error && data.error.reason;
     const wait = Number(r.headers.get('Retry-After')) || 5 * (attempt + 1);
     if (reason === 'QUOTA_EXCEEDED' || wait > 120 || attempt >= 5) {
-      throw new Error('Spotify временно ограничил запросы.');
+      throw new Error('Spotify временно ограничил запросы (примерно на ' + Math.max(1, Math.round(wait / 60)) + ' мин.).');
     }
     await sleep(wait * 1000 + 300);
     return api(path, opts, attempt + 1);
