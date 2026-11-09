@@ -168,9 +168,10 @@ async function api(path, opts = {}, attempt = 0) {
   if (r.status === 429) {
     const reason = data && data.error && data.error.reason;
     const wait = Number(r.headers.get('Retry-After')) || 5 * (attempt + 1);
-    if (reason === 'QUOTA_EXCEEDED' || wait > 120 || attempt >= 5) {
+    if (reason === 'QUOTA_EXCEEDED' || wait > 900 || attempt >= 40) {
       throw new Error('Spotify временно ограничил запросы (примерно на ' + Math.max(1, Math.round(wait / 60)) + ' мин.).');
     }
+    if (wait >= 10) setSync('Spotify просит подождать ' + wait + ' сек. Продолжу сам...');
     await sleep(wait * 1000 + 300);
     return api(path, opts, attempt + 1);
   }
@@ -558,7 +559,8 @@ async function updateCatalog() {
     const total = Object.values(cat).reduce((s, r) => s + r.length, 0);
     setSync(`Исполнителей: ${artists.length}. Их песен в базе: ${total}. Новых за это обновление: ${added}.`);
   } catch (e) {
-    setSync('Обновление прервано: ' + e.message + ' Продолжу с того же места при следующем открытии.');
+    setSync('Обновление прервано: ' + e.message + ' Продолжу сам через 5 минут, держите сайт открытым.');
+    setTimeout(() => { if (!syncing) updateCatalog(); }, 5 * 60 * 1000);
   } finally {
     syncing = false;
     $('sync-btn').disabled = false;
