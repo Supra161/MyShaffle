@@ -14,6 +14,7 @@ const MIN_LIKES = 3;                // исполнитель считается
 const UPDATE_EVERY_HOURS = 12;      // как часто проверять новинки исполнителей
 const PAUSE_MS = 600;               // пауза между запросами, чтобы Spotify не ограничивал
 const PARALLEL = 1;                 // релизы скачиваются по одному, чтобы не упираться в лимит Spotify
+let pace = PAUSE_MS;                // текущая пауза: растёт, когда Spotify ограничивает, и плавно уменьшается
 const MAX_CHAIN = 40;               // самая длинная цепочка песен с переходами
 
 const $ = id => document.getElementById(id);
@@ -171,6 +172,7 @@ async function api(path, opts = {}, attempt = 0) {
     if (reason === 'QUOTA_EXCEEDED' || wait > 900 || attempt >= 40) {
       throw new Error('Spotify временно ограничил запросы (примерно на ' + Math.max(1, Math.round(wait / 60)) + ' мин.).');
     }
+    pace = Math.min(pace * 2, 10000);
     if (wait >= 10) setSync('Spotify просит подождать ' + wait + ' сек. Продолжу сам...');
     await sleep(wait * 1000 + 300);
     return api(path, opts, attempt + 1);
@@ -180,6 +182,7 @@ async function api(path, opts = {}, attempt = 0) {
     return api(path, opts, attempt + 1);
   }
   if (!r.ok) throw new Error((data && data.error && data.error.message) || ('HTTP ' + r.status));
+  pace = Math.max(PAUSE_MS, pace * 0.98);
   return data;
 }
 
@@ -467,7 +470,7 @@ async function artistReleases(aid, known, full) {
       const fresh = (d.items || []).filter(al => al && !known.has(al.id));
       out[group].push(...fresh);
       path = (!full && fresh.length === 0) ? null : nextPath(d.next);
-      await sleep(PAUSE_MS);
+      await sleep(pace);
     }
   }
   return out;
@@ -498,7 +501,7 @@ async function syncArtist(aid, rows, known, full, ctx = {}) {
         const d = await api(path);
         tracks.push(...(d.items || []).filter(Boolean));
         path = nextPath(d.next);
-        await sleep(PAUSE_MS);
+        await sleep(pace);
       }
       for (const t of tracks) {
         if (!isPlayable(t)) continue;
