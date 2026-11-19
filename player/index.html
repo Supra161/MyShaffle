@@ -2,62 +2,145 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MyMusic</title>
-<meta name="theme-color" content="#121212">
+<meta name="theme-color" content="#0b0b0f">
 <link rel="manifest" href="manifest.json">
 <style>
-  *{box-sizing:border-box}
-  body{font-family:system-ui,sans-serif;background:#121212;color:#fff;margin:0;padding:16px;max-width:640px;margin:auto}
-  h1{font-size:22px;margin:8px 0 12px}
-  button{background:#282828;color:#fff;border:0;border-radius:20px;padding:10px 16px;font-size:15px;cursor:pointer}
-  button.main{background:#1DB954;color:#000;font-weight:600;width:56px;height:56px;border-radius:50%;font-size:22px;padding:0}
-  input{width:100%;padding:10px 14px;border-radius:12px;border:1px solid #333;background:#1e1e1e;color:#fff;font-size:15px}
-  #now{background:#1e1e1e;border-radius:16px;padding:14px;margin-bottom:12px}
-  #title{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #artist{color:#b3b3b3;font-size:14px;min-height:1.2em}
-  #bar{width:100%;margin:10px 0 4px}
-  .ctrl{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:6px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-  #info{color:#888;font-size:13px;margin:6px 0}
+  :root{--bg:#0b0b0f;--card:#16161d;--card2:#1e1e27;--text:#f4f4f6;--muted:#9a9aa8;--accent:#1ed760;--accent2:#7c5cff;--line:#26262f}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+  body{min-height:100vh;background:radial-gradient(1200px 600px at 50% -200px,var(--glow,#2a1f55) 0%,transparent 70%),var(--bg);transition:background .6s}
+  .wrap{max-width:560px;margin:0 auto;padding:20px 16px 40px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .logo{font-size:22px;font-weight:800;letter-spacing:-.5px}
+  .logo span{background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  button{font:inherit;color:var(--text);background:none;border:0;cursor:pointer}
+  .icon-btn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--muted);transition:.15s}
+  .icon-btn:hover{color:var(--text);background:var(--card2)}
+  svg{width:22px;height:22px;fill:currentColor}
+
+  /* плеер */
+  #now{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid var(--line);border-radius:24px;padding:20px;backdrop-filter:blur(10px)}
+  .cover{width:100%;aspect-ratio:1;max-width:300px;margin:0 auto 18px;border-radius:20px;display:grid;place-items:center;font-size:72px;font-weight:800;color:rgba(255,255,255,.9);background:linear-gradient(135deg,var(--c1,#7c5cff),var(--c2,#1ed760));box-shadow:0 20px 60px -20px var(--c1,#7c5cff);transition:background .6s,box-shadow .6s}
+  #title{font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+  #artist{color:var(--muted);font-size:15px;min-height:1.3em;text-align:center;margin-top:4px}
+  #bar{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;margin:18px 0 6px;background:linear-gradient(90deg,var(--text) var(--p,0%),#3a3a46 var(--p,0%));outline:none}
+  #bar::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--text);box-shadow:0 0 0 4px rgba(255,255,255,.12)}
+  #bar::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--text)}
+  .times{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .ctrl{display:flex;align-items:center;justify-content:center;gap:28px;margin-top:10px}
+  .ctrl .icon-btn{width:52px;height:52px;color:var(--text)}
+  .ctrl .icon-btn svg{width:28px;height:28px}
+  #play{width:72px;height:72px;border-radius:50%;background:var(--text);color:#000;display:grid;place-items:center;transition:transform .12s}
+  #play:active{transform:scale(.94)}
+  #play svg{width:32px;height:32px}
+
+  /* кнопки действий */
+  .actions{display:flex;gap:8px;margin:16px 0 8px;overflow-x:auto;scrollbar-width:none}
+  .chip{white-space:nowrap;padding:10px 16px;border-radius:999px;background:var(--card2);border:1px solid var(--line);font-size:14px;display:flex;align-items:center;gap:8px;color:var(--text)}
+  .chip svg{width:16px;height:16px}
+  .chip:hover{border-color:#3a3a46}
+  #info{color:var(--muted);font-size:13px;margin:8px 2px 14px}
+
+  /* поиск и список */
+  .search{position:relative;margin-bottom:8px}
+  .search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted)}
+  input#search,input#pwd{width:100%;padding:13px 16px 13px 42px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px;outline:none}
+  input#pwd{padding-left:16px}
+  input:focus{border-color:var(--accent2)}
   ul{list-style:none;padding:0;margin:0}
-  li{display:flex;align-items:center;gap:8px;padding:9px 6px;border-bottom:1px solid #222;cursor:pointer}
-  li.cur{color:#1DB954}
-  li .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  li .a{color:#888;font-size:13px}
-  li .d{font-size:12px;color:#1DB954;width:14px}
-  #login{display:none;margin-top:40px}
+  li{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:12px;cursor:pointer;transition:background .12s}
+  li:hover{background:var(--card)}
+  li .d{width:6px;height:6px;border-radius:50%;flex:none;font-size:0;background:transparent}
+  li .d:not(:empty){background:var(--accent)}
+  li .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+  li .a{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis}
+  li.cur .t{color:var(--accent)}
+  li::before{content:"";width:40px;height:40px;border-radius:8px;flex:none;background:linear-gradient(135deg,#2c2c38,#1a1a22)}
+  li.cur::before{background:linear-gradient(135deg,var(--c1,#7c5cff),var(--c2,#1ed760))}
+
+  /* вход */
+  #login{display:none;margin-top:12vh;text-align:center}
+  #login p{color:var(--muted)}
+  #pwd-ok{margin-top:12px;width:100%;padding:13px;border-radius:14px;background:var(--accent);color:#000;font-weight:700}
+  #login-err{color:#ff6b6b;margin-top:10px}
 </style>
 </head>
 <body>
-<h1>MyMusic</h1>
-<div id="login">
-  <p>Введите пароль плеера</p>
-  <input id="pwd" type="password" autocomplete="current-password">
-  <div class="row"><button id="pwd-ok">Войти</button></div>
-  <div id="login-err" style="color:#f66"></div>
-</div>
-<div id="app" style="display:none">
-  <div id="now">
-    <div id="title">Нажмите ▶</div>
-    <div id="artist"></div>
-    <input id="bar" type="range" min="0" max="1000" value="0">
-    <div class="ctrl">
-      <button id="prev">⏮</button>
-      <button id="play" class="main">▶</button>
-      <button id="next">⏭</button>
+<div class="wrap">
+  <header>
+    <div class="logo">My<span>Music</span></div>
+    <button class="icon-btn" id="refresh" title="Обновить список"><svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
+  </header>
+
+  <div id="login">
+    <div class="logo" style="font-size:32px;margin-bottom:8px">My<span>Music</span></div>
+    <p>Введите пароль плеера</p>
+    <input id="pwd" type="password" autocomplete="current-password" placeholder="Пароль">
+    <button id="pwd-ok">Войти</button>
+    <div id="login-err"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div id="now">
+      <div class="cover" id="cover">♪</div>
+      <div id="title">Нажмите ▶</div>
+      <div id="artist"></div>
+      <input id="bar" type="range" min="0" max="1000" value="0">
+      <div class="times"><span id="tcur">0:00</span><span id="tdur">0:00</span></div>
+      <div class="ctrl">
+        <button class="icon-btn" id="prev" title="Назад"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+        <button id="play" title="Играть"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="icon-btn" id="next" title="Вперёд"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+      </div>
     </div>
+
+    <div class="actions">
+      <button class="chip" id="reshuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>Перемешать</button>
+      <button class="chip" id="dl"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>Скачать всё</button>
+    </div>
+    <div id="info"></div>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="search" placeholder="Поиск по песням">
+    </div>
+    <ul id="list"></ul>
   </div>
-  <div class="row">
-    <button id="reshuffle">Перемешать заново</button>
-    <button id="dl">Скачать всё на устройство</button>
-    <button id="refresh">Обновить список</button>
-  </div>
-  <div id="info"></div>
-  <input id="search" placeholder="Поиск">
-  <ul id="list"></ul>
 </div>
 <audio id="audio" preload="auto"></audio>
 <script src="app.js?v=1"></script>
+<script>
+// оформление: иконка play/pause, время, полоса прогресса, цвет обложки под песню
+(() => {
+  const a = document.getElementById('audio'), play = document.getElementById('play'), bar = document.getElementById('bar');
+  const PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  const PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+  const fmt = s => isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : '0:00';
+  const setIcon = () => { play.innerHTML = a.paused ? PLAY : PAUSE; };
+  a.addEventListener('play', () => setTimeout(setIcon));
+  a.addEventListener('pause', () => setTimeout(setIcon));
+  setInterval(() => {
+    if (play.textContent.trim()) setIcon(); // app.js ставит текст ▶/⏸ — заменяем на иконку
+    document.getElementById('tcur').textContent = fmt(a.currentTime);
+    document.getElementById('tdur').textContent = fmt(a.duration);
+    bar.style.setProperty('--p', (bar.value / 10) + '%');
+  }, 250);
+  const title = document.getElementById('title');
+  const paint = () => {
+    const s = title.textContent || '';
+    let h = 0; for (const ch of s) h = (h * 31 + ch.codePointAt(0)) % 360;
+    const c1 = `hsl(${h},70%,55%)`, c2 = `hsl(${(h + 60) % 360},70%,45%)`;
+    const root = document.documentElement.style;
+    root.setProperty('--c1', c1); root.setProperty('--c2', c2);
+    root.setProperty('--glow', `hsla(${h},60%,30%,.55)`);
+    const letter = s.replace(/[^\p{L}\p{N}]/gu, '').charAt(0).toUpperCase();
+    document.getElementById('cover').textContent = s === 'Нажмите ▶' ? '♪' : (letter || '♪');
+  };
+  new MutationObserver(paint).observe(title, { childList: true, characterData: true, subtree: true });
+  paint(); setIcon();
+})();
+</script>
 </body>
 </html>
