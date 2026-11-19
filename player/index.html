@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyMusic</title>
+<meta name="theme-color" content="#121212">
+<link rel="manifest" href="manifest.json">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,sans-serif;background:#121212;color:#fff;margin:0;padding:16px;max-width:640px;margin:auto}
+  h1{font-size:22px;margin:8px 0 12px}
+  button{background:#282828;color:#fff;border:0;border-radius:20px;padding:10px 16px;font-size:15px;cursor:pointer}
+  button.main{background:#1DB954;color:#000;font-weight:600;width:56px;height:56px;border-radius:50%;font-size:22px;padding:0}
+  input{width:100%;padding:10px 14px;border-radius:12px;border:1px solid #333;background:#1e1e1e;color:#fff;font-size:15px}
+  #now{background:#1e1e1e;border-radius:16px;padding:14px;margin-bottom:12px}
+  #title{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #artist{color:#b3b3b3;font-size:14px;min-height:1.2em}
+  #bar{width:100%;margin:10px 0 4px}
+  .ctrl{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:6px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  #info{color:#888;font-size:13px;margin:6px 0}
+  ul{list-style:none;padding:0;margin:0}
+  li{display:flex;align-items:center;gap:8px;padding:9px 6px;border-bottom:1px solid #222;cursor:pointer}
+  li.cur{color:#1DB954}
+  li .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  li .a{color:#888;font-size:13px}
+  li .d{font-size:12px;color:#1DB954;width:14px}
+  #login{display:none;margin-top:40px}
+</style>
+</head>
+<body>
+<h1>MyMusic</h1>
+<div id="login">
+  <p>Введите пароль плеера</p>
+  <input id="pwd" type="password" autocomplete="current-password">
+  <div class="row"><button id="pwd-ok">Войти</button></div>
+  <div id="login-err" style="color:#f66"></div>
+</div>
+<div id="app" style="display:none">
+  <div id="now">
+    <div id="title">Нажмите ▶</div>
+    <div id="artist"></div>
+    <input id="bar" type="range" min="0" max="1000" value="0">
+    <div class="ctrl">
+      <button id="prev">⏮</button>
+      <button id="play" class="main">▶</button>
+      <button id="next">⏭</button>
+    </div>
+  </div>
+  <div class="row">
+    <button id="reshuffle">Перемешать заново</button>
+    <button id="dl">Скачать всё на устройство</button>
+    <button id="refresh">Обновить список</button>
+  </div>
+  <div id="info"></div>
+  <input id="search" placeholder="Поиск">
+  <ul id="list"></ul>
+</div>
+<audio id="audio" preload="auto"></audio>
+<script src="app.js?v=1"></script>
+</body>
+</html>
