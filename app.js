@@ -674,7 +674,7 @@ async function nextChunk(pool, unplayed) {
   if (fresh.length) deck = shuffle(deck.concat(fresh));
   deck = back.concat(deck);
 
-  if (!deck.length) {
+  if (deck.length < Math.min(CHUNK, pool.size)) { // остаток круга + сразу новый круг
     const left = new Set(deck);
     deck = deck.concat(shuffle([...pool.keys()].filter(id => !left.has(id))));
     played.clear();
