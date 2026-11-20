@@ -183,7 +183,7 @@ async function toMp3(file, onProgress) {
   ctx.close();
   const ch = Math.min(2, buf.numberOfChannels);
   // самое высокое качество, при котором файл влезет в 19 МБ
-  const kbps = [320, 256, 224, 192, 160, 128, 96].find(k => buf.duration * k * 125 < 19e6) || 96;
+  const kbps = [192, 160, 128, 96].find(k => buf.duration * k * 125 < 19e6) || 96; // 192 кбит/с: почти не отличить на слух, файл вдвое меньше
   const enc = new lamejs.Mp3Encoder(ch, 44100, kbps);
   const L = buf.getChannelData(0), R = ch > 1 ? buf.getChannelData(1) : null;
   const toI16 = (f, s, e) => { const a = new Int16Array(e - s); for (let i = s; i < e; i++) { const v = Math.max(-1, Math.min(1, f[i])); a[i - s] = v < 0 ? v * 0x8000 : v * 0x7fff; } return a; };
@@ -215,9 +215,17 @@ $('upfile').onchange = async () => {
       $('info').textContent = `Загружаю ${head}`;
       const fd = new FormData();
       fd.append('file', f, f.name);
-      const r = await fetch(`${API}/api/upload?key=${encodeURIComponent(key())}`, { method: 'POST', body: fd });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      const mb = (f.size / 1048576).toFixed(1);
+      // XMLHttpRequest умеет показывать процент отправки, fetch — нет
+      const d = await new Promise((res, rej) => {
+        const x = new XMLHttpRequest();
+        x.open('POST', `${API}/api/upload?key=${encodeURIComponent(key())}`);
+        x.upload.onprogress = ev => { if (ev.lengthComputable) $('info').textContent = `Загружаю ${Math.round(ev.loaded / ev.total * 100)}% (${mb} МБ) — ${head}`; };
+        x.upload.onload = () => { $('info').textContent = `Сохраняю в Telegram — ${head}`; };
+        x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (e) {} x.status < 300 ? res(j) : rej(new Error(j.error || ('HTTP ' + x.status))); };
+        x.onerror = () => rej(new Error('нет связи'));
+        x.send(fd);
+      });
       ok++;
     } catch (e) { skip.push(files[i].name + ' (' + e.message + ')'); }
   }
