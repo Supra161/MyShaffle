@@ -1,6 +1,6 @@
 // Чтобы плеер открывался без интернета
-const SHELL = 'mymusic-shell-v2';
-const FILES = ['./', './index.html', './app.js?v=2', './manifest.json'];
+const SHELL = 'mymusic-shell-v3';
+const FILES = ['./', './index.html', './app.js?v=3', './manifest.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {

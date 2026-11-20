@@ -169,24 +169,57 @@ $('dl').onclick = async () => {
   updateInfo();
 };
 
-// загрузить песни с устройства
+// ---------- Загрузка песен с устройства ----------
+const LIMIT = 20 * 1024 * 1024; // больше Telegram не отдаёт ботам
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('не загрузился конвертер')); document.head.appendChild(s); });
+}
+// Большой файл (FLAC, WAV и т. п.) переводим в mp3 прямо на устройстве
+async function toMp3(file, onProgress) {
+  if (!window.lamejs) await loadScript('https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js');
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC({ sampleRate: 44100 });
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  ctx.close();
+  const ch = Math.min(2, buf.numberOfChannels);
+  // самое высокое качество, при котором файл влезет в 19 МБ
+  const kbps = [320, 256, 224, 192, 160, 128, 96].find(k => buf.duration * k * 125 < 19e6) || 96;
+  const enc = new lamejs.Mp3Encoder(ch, 44100, kbps);
+  const L = buf.getChannelData(0), R = ch > 1 ? buf.getChannelData(1) : null;
+  const toI16 = (f, s, e) => { const a = new Int16Array(e - s); for (let i = s; i < e; i++) { const v = Math.max(-1, Math.min(1, f[i])); a[i - s] = v < 0 ? v * 0x8000 : v * 0x7fff; } return a; };
+  const block = 1152 * 32, out = [];
+  for (let i = 0, n = 0; i < L.length; i += block, n++) {
+    const e = Math.min(i + block, L.length);
+    const mp3 = R ? enc.encodeBuffer(toI16(L, i, e), toI16(R, i, e)) : enc.encodeBuffer(toI16(L, i, e));
+    if (mp3.length) out.push(new Uint8Array(mp3));
+    if (n % 20 === 0) { onProgress(Math.round(i / L.length * 100), kbps); await new Promise(r => setTimeout(r)); }
+  }
+  const end = enc.flush();
+  if (end.length) out.push(new Uint8Array(end));
+  return new File(out, file.name.replace(/\.[^.]+$/, '') + '.mp3', { type: 'audio/mpeg' });
+}
 $('up').onclick = () => $('upfile').click();
 $('upfile').onchange = async () => {
   const files = [...$('upfile').files];
   $('upfile').value = '';
-  let ok = 0, skip = [];
+  let ok = 0;
+  const skip = [];
   for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    if (f.size > 20 * 1024 * 1024) { skip.push(f.name + ' (больше 20 МБ)'); continue; }
-    $('info').textContent = `Загружаю ${i + 1} из ${files.length}: ${f.name}`;
+    let f = files[i];
+    const head = `${i + 1} из ${files.length}: ${f.name}`;
     try {
+      if (f.size > LIMIT) {
+        f = await toMp3(f, (p, k) => { $('info').textContent = `Сжимаю в mp3 ${k} кбит/с (${p}%) — ${head}`; });
+        if (f.size > LIMIT) throw new Error('даже после сжатия больше 20 МБ');
+      }
+      $('info').textContent = `Загружаю ${head}`;
       const fd = new FormData();
       fd.append('file', f, f.name);
       const r = await fetch(`${API}/api/upload?key=${encodeURIComponent(key())}`, { method: 'POST', body: fd });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
       ok++;
-    } catch (e) { skip.push(f.name + ' (' + e.message + ')'); }
+    } catch (e) { skip.push(files[i].name + ' (' + e.message + ')'); }
   }
   await loadTracks();
   $('info').textContent = `Загружено: ${ok}.` + (skip.length ? ' Не загружены: ' + skip.join('; ') : '');
