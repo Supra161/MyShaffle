@@ -98,6 +98,8 @@
 
     <div class="actions">
       <button class="chip" id="reshuffle"><svg viewBox="0 0 24 24"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>Перемешать</button>
+      <button class="chip" id="up"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zm4-4h6v-6h4l-7-7-7 7h4v6z"/></svg>Загрузить</button>
+      <input type="file" id="upfile" accept="audio/*,.mp3,.m4a,.flac,.ogg,.wav" multiple hidden>
       <button class="chip" id="dl"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>Скачать всё</button>
     </div>
     <div id="info"></div>
@@ -110,7 +112,7 @@
   </div>
 </div>
 <audio id="audio" preload="auto"></audio>
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 <script>
 // оформление: иконка play/pause, время, полоса прогресса, цвет обложки под песню
 (() => {

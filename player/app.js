@@ -169,6 +169,29 @@ $('dl').onclick = async () => {
   updateInfo();
 };
 
+// загрузить песни с устройства
+$('up').onclick = () => $('upfile').click();
+$('upfile').onchange = async () => {
+  const files = [...$('upfile').files];
+  $('upfile').value = '';
+  let ok = 0, skip = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (f.size > 20 * 1024 * 1024) { skip.push(f.name + ' (больше 20 МБ)'); continue; }
+    $('info').textContent = `Загружаю ${i + 1} из ${files.length}: ${f.name}`;
+    try {
+      const fd = new FormData();
+      fd.append('file', f, f.name);
+      const r = await fetch(`${API}/api/upload?key=${encodeURIComponent(key())}`, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+      ok++;
+    } catch (e) { skip.push(f.name + ' (' + e.message + ')'); }
+  }
+  await loadTracks();
+  $('info').textContent = `Загружено: ${ok}.` + (skip.length ? ' Не загружены: ' + skip.join('; ') : '');
+};
+
 // ---------- Список ----------
 function markCached(id) { const el = document.querySelector(`li[data-id="${id}"] .d`); if (el) el.textContent = '●'; updateInfo(); }
 function highlight() { document.querySelectorAll('li.cur').forEach(e => e.classList.remove('cur')); const el = document.querySelector(`li[data-id="${current}"]`); if (el) el.classList.add('cur'); }
